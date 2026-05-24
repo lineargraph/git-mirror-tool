@@ -1,0 +1,37 @@
+{
+  "pins": {
+    "haskell-json-fmt": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "lineargraph",
+        "repo": "haskell-json-fmt"
+      },
+      "branch": "mistress",
+      "submodules": false,
+      "revision": "11e3f2874a9195bb087378002f72d06e64649dcd",
+      "url": "https://github.com/lineargraph/haskell-json-fmt/archive/11e3f2874a9195bb087378002f72d06e64649dcd.tar.gz",
+      "hash": "sha256-NW/ylkb8ZPKSFm/w5ioW4EbPS5Nam2+DJbU0O8wQMF8="
+    },
+    "nixpkgs": {
+      "type": "Channel",
+      "name": "nixpkgs-unstable",
+      "url": "https://releases.nixos.org/nixpkgs/nixpkgs-26.05pre1003764.3d8f0f3f72a6/nixexprs.tar.xz",
+      "hash": "sha256-Zc5W2GRfLZtIDsEn0A5kzoN0+yNWq/3MzzoXGu0ytMU="
+    },
+    "treefmt-nix": {
+      "type": "Git",
+      "repository": {
+        "type": "GitHub",
+        "owner": "numtide",
+        "repo": "treefmt-nix"
+      },
+      "branch": "main",
+      "submodules": false,
+      "revision": "790751ff7fd3801feeaf96d7dc416a8d581265ba",
+      "url": "https://github.com/numtide/treefmt-nix/archive/790751ff7fd3801feeaf96d7dc416a8d581265ba.tar.gz",
+      "hash": "sha256-pc20NRoMdiar8oPQceQT47UUZMBTiMdUuWrYu2obUP0="
+    }
+  },
+  "version": 7
+}

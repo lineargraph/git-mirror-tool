@@ -1,0 +1,14 @@
+{ "sources":
+  [ { "type": "github"
+    , "namespace": "lineargraph"
+    }
+  , { "type": "github"
+    , "namespace": "firmamentmc"
+    }
+  , { "type": "git"
+    , "upstream": ""
+    }
+  ]
+, "root": "./repos"
+, "github_token": "aaa"
+}
