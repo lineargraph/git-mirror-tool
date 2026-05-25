@@ -21,5 +21,6 @@ stdenvNoCC.mkDerivation (finalAttrs: {
   meta = {
     description = "A simple tool for mirroring a list of git repositories";
     license = lib.licenses.mit;
+    mainProgram = "git-mirror-tool";
   };
 })
