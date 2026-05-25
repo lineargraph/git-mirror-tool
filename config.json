@@ -6,7 +6,8 @@
     , "namespace": "firmamentmc"
     }
   , { "type": "git"
-    , "upstream": ""
+    , "upstream": "https://github.com/mat-1/mautrix-discord/"
+    , "name": "mautrix-discord.git"
     }
   ]
 , "root": "./repos"

@@ -13,6 +13,7 @@ in
 pkgs.mkShell {
   nativeBuildInputs = [
     treefmtWrapper
+    pkgs.ruff
     python
   ];
 }
