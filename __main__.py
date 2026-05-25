@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import requests
+import base64
 import dataclasses
 import os
 import enum
@@ -7,7 +8,7 @@ import shutil
 import subprocess
 import sys
 import typing
-from typing import Type, Any, Never
+from typing import Type, Any, Never, Optional
 import msgspec
 from pathlib import Path
 import argparse
@@ -43,6 +44,7 @@ class Config(msgspec.Struct):
     root: Path
     sources: list[typing.Union[GitSource, GitHubNamespaceSource]]
     github_token: typing.Optional[str] = None
+    github_token_file: typing.Optional[Path] = None
 
 
 dec = msgspec.json.Decoder(Config, dec_hook=dec_hook)
@@ -51,11 +53,15 @@ dec = msgspec.json.Decoder(Config, dec_hook=dec_hook)
 def validate(args: argparse.Namespace, print_ok=True):
     errors = []
     config: Config = args.config
+    if config.github_token and config.github_token_file:
+        errors.append(
+            "both github_token and github_token_file are set, but only one should be set"
+        )
     for s in config.sources:
         if isinstance(s, GitHubNamespaceSource):
             if not s.entity:
                 errors.append("a github source is missing a namespace")
-            if not config.github_token:
+            if not config.github_token and not config.github_token_file:
                 errors.append(
                     f"for github source {s.entity} to be fetched, there needs to be a github_token at the top level"
                 )
@@ -75,8 +81,8 @@ def validate(args: argparse.Namespace, print_ok=True):
         print("ok")
 
 
-def run_raw(args: list[str], error_as_none: bool = False):
-    print(f"[debug] running command {args}")
+def run_raw(args: list[str], error_as_none: bool = False, env: dict[str, str] = {}):
+    print(f"[debug] running command {[a for a in args if 'http.extra' not in a]}")
     process = subprocess.run(
         args,
         capture_output=True,
@@ -86,6 +92,7 @@ def run_raw(args: list[str], error_as_none: bool = False):
             "GIT_CONFIG_GLOBAL": "/dev/null",
             "GIT_CONFIG_NOSYSTEM": "1",
             "PATH": os.environ["PATH"],
+            **env,
         },
     )
     if process.returncode != 0:
@@ -97,12 +104,30 @@ def run_raw(args: list[str], error_as_none: bool = False):
     return stdout
 
 
-def run_git(folder: Path, args: list[str], error_as_none: bool = False):
-    return run_raw(["git", "-C", str(folder), *args], error_as_none=error_as_none)
+def run_git(
+    folder: Path, args: list[str], error_as_none: bool = False, env: dict[str, str] = {}
+):
+    return run_raw(
+        ["git", "-C", str(folder), *args], error_as_none=error_as_none, env=env
+    )
 
 
-def mirror_repo(upstream: str, folder: Path):
-    print(f"mirroring {upstream} into {folder}")
+def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
+    print(
+        f"mirroring {upstream} into {folder} (has auth_header? {auth_header is not None})"
+    )
+    auth_env = (
+        {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": f"Authorization: {auth_header}",
+            "GIT_TRACE": "1",
+            "GIT_TRANSFER_TRACE": "1",
+            "GIT_CURL_VERBOSE": "1",
+        }
+        if auth_header
+        else {}
+    )
     if (
         run_git(folder, ["remote", "get-url", "origin"], error_as_none=True) != upstream
         or run_git(
@@ -116,13 +141,31 @@ def mirror_repo(upstream: str, folder: Path):
             print("deletion completed")
         except FileNotFoundError:
             print("folder not found.")
-        run_raw(["git", "clone", "--mirror", upstream, str(folder)])
+        run_raw(
+            [
+                "git",
+                "clone",
+                "--mirror",
+                upstream,
+                str(folder),
+            ],
+            env=auth_env,
+        )
     else:
-        run_git(folder, ["fetch", "-p", "origin"])
+        run_git(
+            folder,
+            [
+                "fetch",
+                "-p",
+                "origin",
+            ],
+            env=auth_env,
+        )
 
 
 def gh_api(config: Config, path: str, query_params: dict[str, str]):
     assert path.startswith("/")
+    print(f"[debug] requesting {path} with {query_params}")
     response = requests.get(
         f"https://api.github.com{path}",
         headers={
@@ -144,13 +187,17 @@ class GitHubRepo:
 
 def mirror_github(config: Config, github: GitHubNamespaceSource, folder: Path):
     repos = prepare_github_repos(config, github)
+    basic_auth = "Basic " + base64.b64encode(
+        f"x-access-token:{config.github_token}".encode("ascii")
+    ).decode("ascii")
     for repo in repos:
         mirror_repo(
-            repo.upstream, folder / (repo.name + ".git")
-        )  # TODO: handle private repos
+            repo.upstream, folder / (repo.name + ".git"), auth_header=basic_auth
+        )
 
 
 def prepare_github_repos(config: Config, github: GitHubNamespaceSource):
+    print(f"preparing to fetch github repos for {github.entity}")
     path: str
     if github.entity_type == GitHubEntityType.USER:
         path = f"/users/{github.entity}/repos"
@@ -164,16 +211,19 @@ def prepare_github_repos(config: Config, github: GitHubNamespaceSource):
         json = gh_api(config, path, {"per_page": "100", "page": str(page)})
         if len(json) == 0:
             break
-        print(json)
         for repo in json:
             repos.append(GitHubRepo(repo["name"], repo["html_url"], repo["private"]))
+        print(f"fetched {len(repos)} so far")
         page += 1
+    print("done fetching repos")
     return repos
 
 
 def pull(args: argparse.Namespace):
     validate(args, print_ok=False)
     config: Config = args.config
+    if config.github_token_file:
+        config.github_token = config.github_token_file.read_text().strip()
     root = config.root
     for s in config.sources:
         if isinstance(s, GitHubNamespaceSource):
@@ -184,12 +234,19 @@ def pull(args: argparse.Namespace):
             assert_unreachable(s)
 
 
+def load_config(s: str) -> Config:
+    p = Path(s)
+    text = p.read_text()
+    config = dec.decode(text)
+    return config
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="git-mirror-tool",
         description="Mirror a set of git repositories from various sources to a local folder",
     )
-    parser.add_argument("--config", type=lambda s: dec.decode(Path(s).read_text()))
+    parser.add_argument("--config", type=load_config)
     subparsers = parser.add_subparsers()
     subparsers.add_parser("validate").set_defaults(func=validate)
     subparsers.add_parser("pull").set_defaults(func=pull)

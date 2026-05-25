@@ -1,9 +1,5 @@
 { "sources":
   [ { "type": "github"
-    , "entity": "lineargraph"
-    , "entity_type": "user"
-    }
-  , { "type": "github"
     , "entity": "firmamentmc"
     , "entity_type": "organization"
     }
@@ -13,5 +9,5 @@
     }
   ]
 , "root": "./repos"
-, "github_token": "aaa"
+, "github_token_file": "./gh_token_file"
 }
