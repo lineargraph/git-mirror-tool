@@ -1,4 +1,5 @@
 {
+  git,
   python3,
   stdenvNoCC,
   lib,
@@ -18,6 +19,7 @@ stdenvNoCC.mkDerivation (finalAttrs: {
       --replace-fail "#!/usr/bin/env python3" "#!${pythonEnv}/bin/python3"
     chmod +x $out/bin/git-mirror-tool
   '';
+  buildInputs = [ git ];
   meta = {
     description = "A simple tool for mirroring a list of git repositories";
     license = lib.licenses.mit;
