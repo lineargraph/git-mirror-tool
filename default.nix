@@ -1,20 +1,25 @@
+{
+  python3,
+  stdenvNoCC,
+  lib,
+}:
 let
-  sources = import ./npins;
-  pkgs = import sources.nixpkgs { };
-  haskell-json-fmt = pkgs.callPackage (sources.haskell-json-fmt { inherit pkgs; }) { };
-  treefmtWrapper = (import (sources.treefmt-nix { inherit pkgs; })).mkWrapper (
-    pkgs // { inherit haskell-json-fmt; }
-  ) ./treefmt.nix;
-  python = pkgs.python3.withPackages (pp: [
-    pp.requests
-    pp.msgspec
-  ]);
+  pythonEnv = python3.withPackages (import ./requirements.nix);
 in
-pkgs.mkShell {
-  nativeBuildInputs = [
-    treefmtWrapper
-    pkgs.ruff
-    pkgs.ty
-    python
-  ];
-}
+stdenvNoCC.mkDerivation (finalAttrs: {
+  __structuredAttrs = true;
+  strictDeps = true;
+  pname = "git-mirror-tool";
+  version = "0.0.0";
+  src = ./.;
+  installPhase = ''
+    mkdir -p $out/bin
+    substitute $src/__main__.py $out/bin/git-mirror-tool \
+      --replace-fail "#!/usr/bin/env python3" "#!${pythonEnv}/bin/python3"
+    chmod +x $out/bin/git-mirror-tool
+  '';
+  meta = {
+    description = "A simple tool for mirroring a list of git repositories";
+    license = lib.licenses.mit;
+  };
+})
