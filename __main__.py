@@ -12,9 +12,9 @@ from typing import Type, Any, Never, Optional
 import msgspec
 from pathlib import Path
 import argparse
-import logging
+import logging as stdliblogger
 
-logger = logging.getLogger("git-mirror-tool")
+logger = stdliblogger.getLogger("git-mirror-tool")
 
 
 def assert_unreachable(arg: Never) -> Never:
@@ -130,9 +130,9 @@ def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
             "GIT_CONFIG_COUNT": "1",
             "GIT_CONFIG_KEY_0": "http.extraHeader",
             "GIT_CONFIG_VALUE_0": f"Authorization: {auth_header}",
-            "GIT_TRACE": "1",
-            "GIT_TRANSFER_TRACE": "1",
-            "GIT_CURL_VERBOSE": "1",
+            # "GIT_TRACE": "1",
+            # "GIT_TRANSFER_TRACE": "1",
+            # "GIT_CURL_VERBOSE": "1",
         }
         if auth_header
         else {}
@@ -255,7 +255,7 @@ def load_config(s: str) -> Config:
 
 
 def main():
-    logging.basicConfig(level=logging.INFO)
+    stdliblogger.basicConfig(level=stdliblogger.INFO)
     parser = argparse.ArgumentParser(
         prog="git-mirror-tool",
         description="Mirror a set of git repositories from various sources to a local folder",
@@ -267,7 +267,7 @@ def main():
     subparsers.add_parser("pull").set_defaults(func=pull)
     args = parser.parse_args()
     if args.verbose:
-        logger.setLevel(logging.DEBUG)
+        logger.setLevel(stdliblogger.DEBUG)
     if not hasattr(args, "func"):
         parser.print_help()
     else:
