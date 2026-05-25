@@ -12,6 +12,9 @@ from typing import Type, Any, Never, Optional
 import msgspec
 from pathlib import Path
 import argparse
+import logging
+
+logger = logging.getLogger("git-mirror-tool")
 
 
 def assert_unreachable(arg: Never) -> Never:
@@ -51,38 +54,43 @@ dec = msgspec.json.Decoder(Config, dec_hook=dec_hook)
 
 
 def validate(args: argparse.Namespace, print_ok=True):
-    errors = []
+    any_error = False
+
+    def push_error(error: str):
+        logger.error(f"config error: {error}")
+        nonlocal any_error
+        any_error = True
+
     config: Config = args.config
     if config.github_token and config.github_token_file:
-        errors.append(
+        push_error(
             "both github_token and github_token_file are set, but only one should be set"
         )
     for s in config.sources:
         if isinstance(s, GitHubNamespaceSource):
             if not s.entity:
-                errors.append("a github source is missing a namespace")
+                push_error("a github source is missing a namespace")
             if not config.github_token and not config.github_token_file:
-                errors.append(
+                push_error(
                     f"for github source {s.entity} to be fetched, there needs to be a github_token at the top level"
                 )
         elif isinstance(s, GitSource):
             if not s.upstream:
-                errors.append("a git source is missing an upstream")
+                push_error("a git source is missing an upstream")
             if not s.name:
-                errors.append("a git source is missing a name")
+                push_error("a git source is missing a name")
             elif not s.name.endswith(".git"):
-                errors.append(" a git source should end with .git")
+                push_error(" a git source should end with .git")
         else:
             assert_unreachable(s)
-    if errors:
-        print("\n".join(errors))
+    if any_error:
         sys.exit(1)
-    elif print_ok:
-        print("ok")
+    if print_ok:
+        logger.info("config ok")
 
 
 def run_raw(args: list[str], error_as_none: bool = False, env: dict[str, str] = {}):
-    print(f"[debug] running command {[a for a in args if 'http.extra' not in a]}")
+    logger.debug(f"running command {[a for a in args if 'http.extra' not in a]}")
     process = subprocess.run(
         args,
         capture_output=True,
@@ -100,7 +108,8 @@ def run_raw(args: list[str], error_as_none: bool = False, env: dict[str, str] = 
             return None
         process.check_returncode()
     stdout = str(process.stdout, encoding="utf-8").strip()
-    print(f"[debug] stdout: {stdout}")
+    logger.debug(f"command stdout: {stdout}")
+    logger.debug(f"command stderr: {process.stderr}")
     return stdout
 
 
@@ -113,7 +122,7 @@ def run_git(
 
 
 def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
-    print(
+    logger.info(
         f"mirroring {upstream} into {folder} (has auth_header? {auth_header is not None})"
     )
     auth_env = (
@@ -136,11 +145,14 @@ def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
         != "true"
     ):
         try:
-            print("invalid mirror configuration set-up; deleting folder")
+            logger.warning(
+                "invalid or missing mirror configuration set-up; first trying deleting folder"
+            )
             shutil.rmtree(folder)
-            print("deletion completed")
+            logger.info("folder deletion completed")
         except FileNotFoundError:
-            print("folder not found.")
+            logger.info("folder not found.")
+        logger.info("cloning repository")
         run_raw(
             [
                 "git",
@@ -152,6 +164,7 @@ def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
             env=auth_env,
         )
     else:
+        logger.info("fetching git updates")
         run_git(
             folder,
             [
@@ -165,7 +178,7 @@ def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
 
 def gh_api(config: Config, path: str, query_params: dict[str, str]):
     assert path.startswith("/")
-    print(f"[debug] requesting {path} with {query_params}")
+    logger.debug(f"requesting {path} with {query_params}")
     response = requests.get(
         f"https://api.github.com{path}",
         headers={
@@ -197,7 +210,7 @@ def mirror_github(config: Config, github: GitHubNamespaceSource, folder: Path):
 
 
 def prepare_github_repos(config: Config, github: GitHubNamespaceSource):
-    print(f"preparing to fetch github repos for {github.entity}")
+    logger.info(f"preparing to fetch github repos for {github.entity}")
     path: str
     if github.entity_type == GitHubEntityType.USER:
         path = f"/users/{github.entity}/repos"
@@ -213,9 +226,9 @@ def prepare_github_repos(config: Config, github: GitHubNamespaceSource):
             break
         for repo in json:
             repos.append(GitHubRepo(repo["name"], repo["html_url"], repo["private"]))
-        print(f"fetched {len(repos)} so far")
+        logger.info(f"fetched {len(repos)} so far")
         page += 1
-    print("done fetching repos")
+    logger.info(f"done fetching repos for {github.entity}")
     return repos
 
 
@@ -242,15 +255,19 @@ def load_config(s: str) -> Config:
 
 
 def main():
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         prog="git-mirror-tool",
         description="Mirror a set of git repositories from various sources to a local folder",
     )
+    parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--config", type=load_config)
     subparsers = parser.add_subparsers()
     subparsers.add_parser("validate").set_defaults(func=validate)
     subparsers.add_parser("pull").set_defaults(func=pull)
     args = parser.parse_args()
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
     if not hasattr(args, "func"):
         parser.print_help()
     else:
