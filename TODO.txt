@@ -1,0 +1,13 @@
+= TODO
+
+* Better infrastructure for auth keys
+* GitHub namespace needs the auth key anyway, aber specific private repos wollen den vllt reusen.
+* Oder ein SSH Key.
+* Also im allgemeinen soll gesplittet werden in
+  * Source of data (GH Api, fixed git upstream)
+  * Source of auth (API Key, SSH Key, honest to god user + password auth)
+  * Destination (prefix + name, fixer name)
+  * Public / Private repo marker (git-daemon-export-ok, respected by git daemon, gitiles)
+    * Auch private repos sollen gebackupt werden, nur nicht default exposed.
+* Config format:
+  * Inheritance of certain things could be cool. That might be nicer with TOML. but also i will just end up doing this in a nix module anyway, where i can autogen a lot of things.
