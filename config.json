@@ -1,9 +1,11 @@
 { "sources":
   [ { "type": "github"
-    , "namespace": "lineargraph"
+    , "entity": "lineargraph"
+    , "entity_type": "user"
     }
   , { "type": "github"
-    , "namespace": "firmamentmc"
+    , "entity": "firmamentmc"
+    , "entity_type": "organization"
     }
   , { "type": "git"
     , "upstream": "https://github.com/mat-1/mautrix-discord/"

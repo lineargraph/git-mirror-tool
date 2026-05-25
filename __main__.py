@@ -1,5 +1,8 @@
 #!/usr/bin/env python
+import requests
+import dataclasses
 import os
+import enum
 import shutil
 import subprocess
 import sys
@@ -25,8 +28,14 @@ class GitSource(msgspec.Struct, tag="git"):
     name: str
 
 
+class GitHubEntityType(enum.StrEnum):
+    USER = "user"
+    ORGANIZATION = "organization"
+
+
 class GitHubNamespaceSource(msgspec.Struct, tag="github"):
-    namespace: str
+    entity: str
+    entity_type: GitHubEntityType
     prefix: typing.Optional[str] = None
 
 
@@ -41,20 +50,22 @@ dec = msgspec.json.Decoder(Config, dec_hook=dec_hook)
 
 def validate(args: argparse.Namespace, print_ok=True):
     errors = []
-    config = args.config
+    config: Config = args.config
     for s in config.sources:
         if isinstance(s, GitHubNamespaceSource):
-            if not s.namespace:
+            if not s.entity:
                 errors.append("a github source is missing a namespace")
             if not config.github_token:
                 errors.append(
-                    f"for github source {s.namespace} to be fetched, there needs to be a github_token at the top level"
+                    f"for github source {s.entity} to be fetched, there needs to be a github_token at the top level"
                 )
         elif isinstance(s, GitSource):
             if not s.upstream:
                 errors.append("a git source is missing an upstream")
             if not s.name:
                 errors.append("a git source is missing a name")
+            elif not s.name.endswith(".git"):
+                errors.append(" a git source should end with .git")
         else:
             assert_unreachable(s)
     if errors:
@@ -105,19 +116,68 @@ def mirror_repo(upstream: str, folder: Path):
             print("deletion completed")
         except FileNotFoundError:
             print("folder not found.")
-
-        run_raw(["git", "clone", "--mirror", upstream, folder])
+        run_raw(["git", "clone", "--mirror", upstream, str(folder)])
     else:
         run_git(folder, ["fetch", "-p", "origin"])
 
 
+def gh_api(config: Config, path: str, query_params: dict[str, str]):
+    assert path.startswith("/")
+    response = requests.get(
+        f"https://api.github.com{path}",
+        headers={
+            "X-GitHub-Api-Version": "2026-03-10",
+            "Authorization": f"Bearer {config.github_token}",
+        },
+        params=query_params,
+    )  # todo: handle 429
+    response.raise_for_status()
+    return response.json()
+
+
+@dataclasses.dataclass
+class GitHubRepo:
+    name: str
+    upstream: str
+    private: bool
+
+
+def mirror_github(config: Config, github: GitHubNamespaceSource, folder: Path):
+    repos = prepare_github_repos(config, github)
+    for repo in repos:
+        mirror_repo(
+            repo.upstream, folder / (repo.name + ".git")
+        )  # TODO: handle private repos
+
+
+def prepare_github_repos(config: Config, github: GitHubNamespaceSource):
+    path: str
+    if github.entity_type == GitHubEntityType.USER:
+        path = f"/users/{github.entity}/repos"
+    elif github.entity_type == GitHubEntityType.ORGANIZATION:
+        path = f"/orgs/{github.entity}/repos"
+    else:
+        assert_unreachable(github.entity_type)
+    page = 1
+    repos: list[GitHubRepo] = []
+    while True:
+        json = gh_api(config, path, {"per_page": "100", "page": str(page)})
+        if len(json) == 0:
+            break
+        print(json)
+        for repo in json:
+            repos.append(GitHubRepo(repo["name"], repo["html_url"], repo["private"]))
+        page += 1
+    return repos
+
+
 def pull(args: argparse.Namespace):
     validate(args, print_ok=False)
-    config = args.config
+    config: Config = args.config
     root = config.root
     for s in config.sources:
         if isinstance(s, GitHubNamespaceSource):
-            print("todo: skipping gh namespace source")
+            mirror_github(config, s, root / (s.prefix or s.entity))
         elif isinstance(s, GitSource):
             mirror_repo(s.upstream, root / s.name)
         else:
