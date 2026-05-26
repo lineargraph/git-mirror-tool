@@ -137,6 +137,8 @@ def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
         if auth_header
         else {}
     )
+    folder.parent.mkdir(parents=True, exist_ok=True)
+
     if (
         run_git(folder, ["remote", "get-url", "origin"], error_as_none=True) != upstream
         or run_git(
