@@ -30,6 +30,7 @@ def dec_hook(type: Type, obj: Any) -> Any:
 class GitSource(msgspec.Struct, tag="git"):
     upstream: str
     name: str
+    public: bool = True
 
 
 class GitHubEntityType(enum.StrEnum):
@@ -121,7 +122,9 @@ def run_git(
     )
 
 
-def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
+def mirror_repo(
+    upstream: str, folder: Path, is_public: bool, auth_header: Optional[str] = None
+):
     logger.info(
         f"mirroring {upstream} into {folder} (has auth_header? {auth_header is not None})"
     )
@@ -176,6 +179,13 @@ def mirror_repo(upstream: str, folder: Path, auth_header: Optional[str] = None):
             ],
             env=auth_env,
         )
+    logger.info("update complete")
+
+    export_ok_file = folder / "git-daemon-export-ok"
+    if is_public:
+        export_ok_file.write_text("")
+    else:
+        export_ok_file.unlink(missing_ok=True)
 
 
 def gh_api(config: Config, path: str, query_params: dict[str, str]):
@@ -207,7 +217,10 @@ def mirror_github(config: Config, github: GitHubNamespaceSource, folder: Path):
     ).decode("ascii")
     for repo in repos:
         mirror_repo(
-            repo.upstream, folder / (repo.name + ".git"), auth_header=basic_auth
+            repo.upstream,
+            folder / (repo.name + ".git"),
+            not repo.private,
+            auth_header=basic_auth,
         )
 
 
@@ -244,7 +257,7 @@ def pull(args: argparse.Namespace):
         if isinstance(s, GitHubNamespaceSource):
             mirror_github(config, s, root / (s.prefix or s.entity))
         elif isinstance(s, GitSource):
-            mirror_repo(s.upstream, root / s.name)
+            mirror_repo(s.upstream, root / s.name, s.public)
         else:
             assert_unreachable(s)
 
